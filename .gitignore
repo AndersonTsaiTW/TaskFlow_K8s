@@ -1,0 +1,38 @@
+# Kubernetes / container project
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Local env files
+.env
+.env.*
+!.env.example
+
+# Kube config / local cluster auth files
+kubeconfig
+*.kubeconfig
+
+# Secrets and credentials
+security/
+*.pem
+*.key
+*.crt
+*.p12
+*.jks
+
+# Helm generated artifacts
+**/charts/*.tgz
+**/charts/**/charts/
+
+# Build / cache
+dist/
+build/
+.tmp/
+.cache/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
