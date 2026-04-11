@@ -1,0 +1,38 @@
+{{- if .Values.postgres.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: taskflow-postgres
+spec:
+  strategy:
+    type: Recreate
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taskflow-postgres
+  template:
+    metadata:
+      labels:
+        app: taskflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: {{ .Values.postgres.image | default "postgres:16-alpine" }}
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.config.dbName | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.config.dbUser | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.secret.dbPassword | quote }}
+          ports:
+            - containerPort: {{ .Values.postgres.port | default 5432 }}
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+{{- end }}
