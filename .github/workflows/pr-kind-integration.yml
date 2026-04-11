@@ -2,120 +2,108 @@ name: PR Kind Integration
 
 on:
   pull_request:
-    branches: [main]
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
-  contents: read
   id-token: write
-
-env:
-  AWS_REGION: ca-central-1
-  AWS_ACCOUNT_ID: "485104726319"
-  KIND_CLUSTER_NAME: taskflow-ci
-  MANIFEST_DIR: k8s
+  contents: read
 
 jobs:
-  pr-kind-integration:
+  test:
     runs-on: ubuntu-latest
     steps:
-      # 0) checkout repo
-      - name: Checkout
+      - name: Checkout Code
         uses: actions/checkout@v4
 
-      # 1) get AWS credentials via OIDC
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: ${{ vars.AWS_PR_ECR_READ_ROLE_ARN }}
+      - name: Install Hurl
+        run: |
+          curl --location --silent --output hurl.deb https://github.com/Orange-OpenSource/hurl/releases/download/4.2.0/hurl_4.2.0_amd64.deb
+          sudo dpkg -i hurl.deb
 
-      # 1.1) parse image version config with yq
+      - name: Create k8s Kind Cluster
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: taskflow-ci
+
       - name: Install yq
         run: |
-          sudo curl -sSL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 \
-            -o /usr/local/bin/yq
+          sudo curl -sSL https://github.com/mikefarah/yq/releases/download/v4.44.3/yq_linux_amd64 -o /usr/local/bin/yq
           sudo chmod +x /usr/local/bin/yq
-          yq --version
 
-      - name: Build image URIs from config file
-        id: images
+      - name: Parse Image Configuration
+        id: parse_images
         run: |
-          ACCOUNT_ID=$(yq -r '.aws.accountId' config/image-versions.yaml)
-          REGION=$(yq -r '.aws.region' config/image-versions.yaml)
+          API_ACCT=$(yq -r '.images.api.account' config/image-versions.yaml)
+          API_REG=$(yq -r '.images.api.region' config/image-versions.yaml)
           API_REPO=$(yq -r '.images.api.repository' config/image-versions.yaml)
           API_TAG=$(yq -r '.images.api.tag' config/image-versions.yaml)
+          
+          WEB_ACCT=$(yq -r '.images.web.account' config/image-versions.yaml)
+          WEB_REG=$(yq -r '.images.web.region' config/image-versions.yaml)
           WEB_REPO=$(yq -r '.images.web.repository' config/image-versions.yaml)
           WEB_TAG=$(yq -r '.images.web.tag' config/image-versions.yaml)
 
-          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-          API_IMAGE="${REGISTRY}/${API_REPO}:${API_TAG}"
-          WEB_IMAGE="${REGISTRY}/${WEB_REPO}:${WEB_TAG}"
+          API_IMAGE="${API_ACCT}.dkr.ecr.${API_REG}.amazonaws.com/${API_REPO}:${API_TAG}"
+          WEB_IMAGE="${WEB_ACCT}.dkr.ecr.${WEB_REG}.amazonaws.com/${WEB_REPO}:${WEB_TAG}"
 
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
           echo "api_image=${API_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "web_image=${WEB_IMAGE}" >> "$GITHUB_OUTPUT"
+          
+          echo "api_acct=${API_ACCT}" >> "$GITHUB_OUTPUT"
+          echo "api_reg=${API_REG}" >> "$GITHUB_OUTPUT"
+          
+          echo "web_acct=${WEB_ACCT}" >> "$GITHUB_OUTPUT"
+          echo "web_reg=${WEB_REG}" >> "$GITHUB_OUTPUT"
 
-      # 2) docker login/pull api+web from ECR
-      - name: Login to ECR
-        run: |
-          aws ecr get-login-password --region "${AWS_REGION}" \
-          | docker login --username AWS --password-stdin "${{ steps.images.outputs.registry }}"
-
-      - name: Pull api/web images from ECR
-        run: |
-          docker pull "${{ steps.images.outputs.api_image }}"
-          docker pull "${{ steps.images.outputs.web_image }}"
-
-      # 3) kind create cluster
-      - name: Create Kind cluster
-        uses: helm/kind-action@v1.12.0
+      - name: Configure AWS Credentials for API (Your AWS Account)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          cluster_name: ${{ env.KIND_CLUSTER_NAME }}
+          aws-region: ${{ steps.parse_images.outputs.api_reg }}
+          role-to-assume: arn:aws:iam::${{ steps.parse_images.outputs.api_acct }}:role/github-actions-ecr-push-role
 
-      # 4) kind load docker-image
-      - name: Load images into Kind
+      - name: Pull and Load API Image
         run: |
-          kind load docker-image "${{ steps.images.outputs.api_image }}" --name "${KIND_CLUSTER_NAME}"
-          kind load docker-image "${{ steps.images.outputs.web_image }}" --name "${KIND_CLUSTER_NAME}"
+          aws ecr get-login-password --region ${{ steps.parse_images.outputs.api_reg }} | docker login --username AWS --password-stdin ${{ steps.parse_images.outputs.api_acct }}.dkr.ecr.${{ steps.parse_images.outputs.api_reg }}.amazonaws.com
+          docker pull ${{ steps.parse_images.outputs.api_image }}
+          kind load docker-image ${{ steps.parse_images.outputs.api_image }} --name taskflow-ci
 
-      # 5) render manifests + kubectl apply
-      - name: Render manifests with resolved images
+      - name: Configure AWS Credentials for Web (Partner AWS Account)
+        if: steps.parse_images.outputs.api_acct != steps.parse_images.outputs.web_acct
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ steps.parse_images.outputs.web_reg }}
+          role-to-assume: arn:aws:iam::${{ steps.parse_images.outputs.api_acct }}:role/github-actions-ecr-push-role
+          # Note: Adjust role-to-assume if the IAM structure differs for Partner pulling.
+
+      - name: Pull and Load Web Image
+        run: |
+          aws ecr get-login-password --region ${{ steps.parse_images.outputs.web_reg }} | docker login --username AWS --password-stdin ${{ steps.parse_images.outputs.web_acct }}.dkr.ecr.${{ steps.parse_images.outputs.web_reg }}.amazonaws.com
+          docker pull ${{ steps.parse_images.outputs.web_image }}
+          kind load docker-image ${{ steps.parse_images.outputs.web_image }} --name taskflow-ci
+
+      - name: Render K8s Manifests
         run: |
           mkdir -p .rendered/k8s
-          cp ${MANIFEST_DIR}/*.yaml .rendered/k8s/
-          sed -i "s|__API_IMAGE__|${{ steps.images.outputs.api_image }}|g" .rendered/k8s/api-deployment.yaml
-          sed -i "s|__WEB_IMAGE__|${{ steps.images.outputs.web_image }}|g" .rendered/k8s/web-deployment.yaml
+          cp k8s/*.yaml .rendered/k8s/
+          # Replace placeholders with exact image URIs
+          sed -i "s|__API_IMAGE__|${{ steps.parse_images.outputs.api_image }}|g" .rendered/k8s/api-deployment.yaml
+          sed -i "s|__WEB_IMAGE__|${{ steps.parse_images.outputs.web_image }}|g" .rendered/k8s/web-deployment.yaml
 
-      - name: Apply manifests
+      - name: Apply Manifests
         run: |
           kubectl apply -f .rendered/k8s/namespace.yaml
           kubectl apply -f .rendered/k8s/postgres.yaml
           kubectl apply -f .rendered/k8s/api-deployment.yaml
           kubectl apply -f .rendered/k8s/web-deployment.yaml
 
-      - name: Wait for rollouts
+      - name: Wait for Pods to be Ready
         run: |
-          kubectl -n taskflow rollout status deployment/taskflow-postgres --timeout=180s
-          kubectl -n taskflow rollout status deployment/taskflow-api --timeout=180s
-          kubectl -n taskflow rollout status deployment/taskflow-web --timeout=180s
+          kubectl wait --for=condition=ready pod -l app=taskflow-postgres -n taskflow --timeout=120s
+          kubectl wait --for=condition=ready pod -l app=taskflow-api -n taskflow --timeout=120s
 
-      # 6) smoke/CRUD tests (current minimum smoke)
-      - name: Smoke test API and Web
+      - name: Run Smoke Tests (Hurl)
         run: |
-          kubectl -n taskflow run smoke-curl --rm -i --restart=Never --image=curlimages/curl -- \
-            sh -c 'set -e; \
-            echo "API /docs"; curl -fsS http://taskflow-api:8000/docs >/dev/null; \
-            echo "WEB /"; curl -fsS http://taskflow-web:3000/ >/dev/null; \
-            echo "Smoke passed"'
-
-      # 7) failure diagnostics
-      - name: Dump diagnostics on failure
-        if: failure()
-        run: |
-          kubectl get nodes -o wide || true
-          kubectl -n taskflow get all || true
-          kubectl -n taskflow get events --sort-by=.lastTimestamp || true
-          kubectl -n taskflow logs deployment/taskflow-api --tail=200 || true
-          kubectl -n taskflow logs deployment/taskflow-web --tail=200 || true
-          kubectl -n taskflow logs deployment/taskflow-postgres --tail=200 || true
+          kubectl -n taskflow port-forward svc/taskflow-api 8000:8000 &
+          sleep 5
+          bash scripts/run-ci-tests.sh
