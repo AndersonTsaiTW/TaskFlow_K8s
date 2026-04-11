@@ -145,3 +145,21 @@ kubectl create secret docker-registry ecr-pull-secret \
 2. 再把 Deployment 指向你的 ECR image。
 3. 觀察 rollout 與 pod event。
 4. 最後再做版本滾動（例如 `v1.0.7`, `v1.0.8`）。
+
+## 7) 補充：在本機 (kind) 開發測試直接載入 Image
+
+由於本機的 `kind` 叢集預設沒有連線雲端 ECR 的 IAM 權限，最簡單的做法是在本機 Docker 拉取後，直接手動塞進 kind 裡面。如果你改拉 Partner 的 ECR，只需替換下方帳號與 Region：
+
+```bash
+# 1. 用本機 AWS 憑證登入 ECR (以 Partner ECR 為例)
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 692735150780.dkr.ecr.us-east-1.amazonaws.com
+
+# 2. 拉取 Image 到你的本機 Docker
+docker pull 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6
+
+# 3. 載入到目前的 kind 叢集中 (假設你的 cluster 名稱為 taskflow)
+kind load docker-image 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6 --name taskflow
+
+# 4. 重新套用部署檔 (確認裡面有設定 imagePullPolicy: IfNotPresent)
+kubectl apply -f k8s/web-deployment_l.yaml
+```

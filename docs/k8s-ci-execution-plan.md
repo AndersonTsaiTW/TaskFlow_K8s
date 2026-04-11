@@ -144,11 +144,18 @@ images:
 
    Kind 本地測試建議做法（避免私有 ECR 認證問題）：
 
+   由於你的基礎設施現在是直接從你的 ECR 抓 API，從 Partner 的 ECR 抓 Web，所以在本地測試時，必須登入雙方的 ECR 拉取，再手動塞進 Kind 裡面：
+
    ```bash
+   # 1. 登入你自己的 ECR 並拉取 API Image
+   aws ecr get-login-password --region ca-central-1 | docker login --username AWS --password-stdin 485104726319.dkr.ecr.ca-central-1.amazonaws.com
    docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>
-   docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>
    kind load docker-image 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag> --name taskflow-ci
-   kind load docker-image 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag> --name taskflow-ci
+
+   # 2. 登入 Partner 的 ECR 並拉取 Web Image
+   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 692735150780.dkr.ecr.us-east-1.amazonaws.com
+   docker pull 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>
+   kind load docker-image 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag> --name taskflow-ci
    ```
 
    若 API 出現 `CrashLoopBackOff` 且 log 顯示連到 `localhost:5432` 失敗：
@@ -185,12 +192,11 @@ images:
     參考流程：
 
     - 安裝 `yq`（YAML 讀值工具）
-    - 讀出 `aws.accountId`、`aws.region`
-    - 讀出 `images.api.repository`、`images.api.tag`
-    - 讀出 `images.web.repository`、`images.web.tag`
+    - 讀出 `images.api` 的帳號、區域、倉庫與標籤
+    - 讀出 `images.web` 的帳號、區域、倉庫與標籤
     - 組成：
-       - `API_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<api_repo>:<api_tag>`
-       - `WEB_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<web_repo>:<web_tag>`
+       - `API_IMAGE`
+       - `WEB_IMAGE`
 
     GitHub Actions 範例 step：
 
@@ -205,18 +211,19 @@ images:
     - name: Build image URIs from config file
        id: images
        run: |
-          ACCOUNT_ID=$(yq -r '.aws.accountId' config/image-versions.yaml)
-          REGION=$(yq -r '.aws.region' config/image-versions.yaml)
+          API_ACCT=$(yq -r '.images.api.account' config/image-versions.yaml)
+          API_REG=$(yq -r '.images.api.region' config/image-versions.yaml)
           API_REPO=$(yq -r '.images.api.repository' config/image-versions.yaml)
           API_TAG=$(yq -r '.images.api.tag' config/image-versions.yaml)
+          
+          WEB_ACCT=$(yq -r '.images.web.account' config/image-versions.yaml)
+          WEB_REG=$(yq -r '.images.web.region' config/image-versions.yaml)
           WEB_REPO=$(yq -r '.images.web.repository' config/image-versions.yaml)
           WEB_TAG=$(yq -r '.images.web.tag' config/image-versions.yaml)
 
-          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-          API_IMAGE="${REGISTRY}/${API_REPO}:${API_TAG}"
-          WEB_IMAGE="${REGISTRY}/${WEB_REPO}:${WEB_TAG}"
+          API_IMAGE="${API_ACCT}.dkr.ecr.${API_REG}.amazonaws.com/${API_REPO}:${API_TAG}"
+          WEB_IMAGE="${WEB_ACCT}.dkr.ecr.${WEB_REG}.amazonaws.com/${WEB_REPO}:${WEB_TAG}"
 
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
           echo "api_image=${API_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "web_image=${WEB_IMAGE}" >> "$GITHUB_OUTPUT"
     ```

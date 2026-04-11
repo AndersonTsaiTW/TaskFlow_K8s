@@ -122,3 +122,11 @@ AWS managed policy `AmazonEC2ContainerRegistryReadOnly` can be used for pull-onl
 1. Run workflow `Sync partner web image to our ECR` with `partner_image_tag=v1.0.6`.
 2. Verify image exists in our ECR: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6`.
 3. Update Kubernetes Deployment image to our ECR URI.
+
+PARTNER_REGION: us-east-1
+PARTNER_REGISTRY: 692735150780.dkr.ecr.us-east-1.amazonaws.com
+PARTNER_REPOSITORY: taskflow/web
+
+MY_REGION: ca-central-1
+MY_REGISTRY: 485104726319.dkr.ecr.ca-central-1.amazonaws.com
+MY_REPOSITORY: taskflow/web

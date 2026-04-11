@@ -15,7 +15,7 @@ spec:
     spec:
       containers:
         - name: web
-          image: 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
+          image: 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6
           imagePullPolicy: IfNotPresent
           env:
             - name: HOSTNAME
