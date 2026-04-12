@@ -25,7 +25,10 @@ spec:
             - name: POSTGRES_USER
               value: {{ .Values.config.dbUser | quote }}
             - name: POSTGRES_PASSWORD
-              value: {{ .Values.secret.dbPassword | quote }}
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-secret
+                  key: dbPassword
           ports:
             - containerPort: {{ .Values.postgres.port | default 5432 }}
           volumeMounts:

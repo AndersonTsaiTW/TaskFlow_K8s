@@ -5,8 +5,9 @@ imagePullSecrets: []
 api:
   replicaCount: 1
   image:
+    # Replace with your own ECR (or DockerHub) URI
     repository: <YOUR_ECR_URI>/taskflow/api
-    tag: v1
+    tag: latest
     pullPolicy: IfNotPresent
   containerPort: 8000
   service:
@@ -15,8 +16,9 @@ api:
 web:
   replicaCount: 1
   image:
+    # Replace with your own ECR (or DockerHub) URI
     repository: <YOUR_ECR_URI>/taskflow/web
-    tag: v1
+    tag: latest
     pullPolicy: IfNotPresent
   containerPort: 3000
   service:
@@ -35,8 +37,9 @@ config:
   dbUser: postgres
 
 secret:
-  dbPassword: "postgres"
-  jwtSecret: "change-me"
+  # Override these sensitive values in values-local.yaml for local dev or production!
+  dbPassword: "change-me-in-production"
+  jwtSecret: "change-me-in-production"
 
 ingress:
   enabled: false
