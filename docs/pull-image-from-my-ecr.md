@@ -1,13 +1,11 @@
-# Pull image from my ECR
+# Pull images from ECR
 
-這份文件是「從你自己的 ECR 拉 image」的獨立操作手冊，分成本機驗證與 Kubernetes 兩種情境。
+這份文件是「從 ECR 拉 image」的獨立操作手冊。現在 API 直接從你的 ECR 拉，Web 直接從朋友的 ECR 拉，不再把朋友的 image 複製到你的 ECR。
 
 ## 基本資訊
 
-- AWS Account: `485104726319`
-- ECR Region: `ca-central-1`
-- ECR Registry: `485104726319.dkr.ecr.ca-central-1.amazonaws.com`
-- Example Image: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6`
+- API ECR: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:v1.0.1`
+- Web ECR: `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6`
 
 ## 1) 本機先驗證可不可以 pull
 
@@ -18,9 +16,11 @@ aws sts get-caller-identity
 
 aws ecr get-login-password --region ca-central-1 | docker login --username AWS --password-stdin 485104726319.dkr.ecr.ca-central-1.amazonaws.com
 
-docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
+aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 692735150780.dkr.ecr.us-east-1.amazonaws.com
 
 docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:v1.0.1
+
+docker pull 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6
 ```
 
 ### Bash
@@ -31,7 +31,11 @@ aws sts get-caller-identity
 aws ecr get-login-password --region ca-central-1 \
 | docker login --username AWS --password-stdin 485104726319.dkr.ecr.ca-central-1.amazonaws.com
 
-docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
+aws ecr get-login-password --region us-east-1 \
+| docker login --username AWS --password-stdin 692735150780.dkr.ecr.us-east-1.amazonaws.com
+
+docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:v1.0.1
+docker pull 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6
 ```
 
 ## 2) 需要的最小 IAM 權限
@@ -39,9 +43,9 @@ docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
 如果 pull 遇到 `AccessDenied`，給目前使用的 IAM user/role 這些權限：
 
 - `ecr:GetAuthorizationToken` on `*`
-- `ecr:BatchCheckLayerAvailability` on `arn:aws:ecr:ca-central-1:485104726319:repository/taskflow/web`
-- `ecr:GetDownloadUrlForLayer` on `arn:aws:ecr:ca-central-1:485104726319:repository/taskflow/web`
-- `ecr:BatchGetImage` on `arn:aws:ecr:ca-central-1:485104726319:repository/taskflow/web`
+- `ecr:BatchCheckLayerAvailability` on target repo ARN
+- `ecr:GetDownloadUrlForLayer` on target repo ARN
+- `ecr:BatchGetImage` on target repo ARN
 
 可參考的最小 policy：
 
@@ -56,14 +60,14 @@ docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
       "Resource": "*"
     },
     {
-      "Sid": "PullFromMyRepo",
+      "Sid": "PullFromPartnerRepo",
       "Effect": "Allow",
       "Action": [
         "ecr:BatchCheckLayerAvailability",
         "ecr:GetDownloadUrlForLayer",
         "ecr:BatchGetImage"
       ],
-      "Resource": "arn:aws:ecr:ca-central-1:485104726319:repository/taskflow/web"
+      "Resource": "arn:aws:ecr:us-east-1:692735150780:repository/taskflow/web"
     }
   ]
 }
@@ -74,7 +78,7 @@ docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
 EKS 通常由 Node Role 或 Fargate Pod Execution Role 去拉 ECR：
 
 1. 對執行身分附加 `AmazonEC2ContainerRegistryReadOnly`（或等效自訂 read-only policy）。
-2. 在 Deployment 使用你自己的 ECR image URI。
+2. 在 Deployment 使用實際來源 ECR image URI。
 3. rollout 後檢查 pod event。
 
 Deployment 範例：
@@ -83,7 +87,7 @@ Deployment 範例：
 spec:
   containers:
     - name: web
-      image: 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6
+      image: 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6
       imagePullPolicy: IfNotPresent
 ```
 
@@ -103,10 +107,10 @@ kubectl describe pod <pod-name> -n <your-namespace>
 ### PowerShell
 
 ```powershell
-$token = aws ecr get-login-password --region ca-central-1
+$token = aws ecr get-login-password --region us-east-1
 
 kubectl create secret docker-registry ecr-pull-secret `
-  --docker-server=485104726319.dkr.ecr.ca-central-1.amazonaws.com `
+  --docker-server=692735150780.dkr.ecr.us-east-1.amazonaws.com `
   --docker-username=AWS `
   --docker-password=$token `
   -n <your-namespace> `
@@ -116,10 +120,10 @@ kubectl create secret docker-registry ecr-pull-secret `
 ### Bash
 
 ```bash
-TOKEN=$(aws ecr get-login-password --region ca-central-1)
+TOKEN=$(aws ecr get-login-password --region us-east-1)
 
 kubectl create secret docker-registry ecr-pull-secret \
-  --docker-server=485104726319.dkr.ecr.ca-central-1.amazonaws.com \
+  --docker-server=692735150780.dkr.ecr.us-east-1.amazonaws.com \
   --docker-username=AWS \
   --docker-password="$TOKEN" \
   -n <your-namespace> \
@@ -142,7 +146,7 @@ kubectl create secret docker-registry ecr-pull-secret \
 ## 6) 建議操作順序
 
 1. 先在本機完成一次 `docker pull`。
-2. 再把 Deployment 指向你的 ECR image。
+2. 再把 Deployment 指向實際來源 ECR image。
 3. 觀察 rollout 與 pod event。
 4. 最後再做版本滾動（例如 `v1.0.7`, `v1.0.8`）。
 

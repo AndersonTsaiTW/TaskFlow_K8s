@@ -47,9 +47,9 @@ images:
 
 ## 1) 目標架構
 
-1. 來源 image 都在你的 ECR：
+1. 來源 image 分別來自兩個 ECR：
    - `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>`
-   - `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`
+   - `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
 2. PR workflow 做整合驗證：
    - 讀 `config/image-versions.yaml`
    - 從 ECR pull api/web
@@ -67,14 +67,15 @@ images:
    - `k8s/`（manifests）
    - `tests/smoke/`
    - `config/`（版本檔）
-2. 保留現有 image sync workflow：
-   - `.github/workflows/sync-partner-web-image.yml`
-3. 把 Deployment image 改成來自你 ECR。
+2. 不再做 partner web image sync/copy；Web 直接從朋友的 ECR 拉取。
+3. 把 Deployment image 改成來自實際來源 ECR。
 
    實作方式（我們剛剛討論版）：
 
    - API image：`485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>`
-   - Web image：`485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`
+   - Web image：`692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
+
+   歷史備案：若未來需要恢復「先把朋友的 Web image sync 到你的 ECR」模式，舊方案保留在 `docs/archive/ecr-cross-account-sync-setup.md`。
 
    目前 repo 範例檔（已可直接用）：
 
@@ -269,7 +270,7 @@ images:
 
 1. Checkout
 2. OIDC 取得 AWS 暫時憑證（唯讀 ECR 權限角色）
-3. Login 你的 ECR
+3. Login API ECR 與朋友的 Web ECR
 4. Pull `api` 與 `web` image
 5. 建立 Kind 叢集
 6. 將 image 載入 Kind
@@ -307,7 +308,8 @@ images:
 注意：
 
 - 這個 PR CI role 不需要 ECR push 權限。
-- 跟你現有 sync role 分開更安全。
+- 這個角色只需要 pull 權限，不需要把朋友的 image push/copy 到你的 ECR。
+- 舊的 sync/copy 方案只作為備案保留，主流程不使用。
 
 ## 4) CRUD 測試最小範圍
 

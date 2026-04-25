@@ -1,18 +1,17 @@
-# ECR cross-account direct pull setup
+# ECR cross-account sync setup (deprecated)
 
-This document records the minimum IAM and ECR policy setup for pulling a partner image directly from the partner ECR through GitHub Actions OIDC or Kubernetes runtime identity.
+This document preserves the previous plan for syncing a partner web image into our ECR through GitHub Actions OIDC.
 
-## Current decision
+This is no longer the active deployment path. The current decision is to pull the Web image directly from the partner ECR:
 
-Web images are pulled directly from the partner ECR. We no longer copy/sync the partner web image into our own ECR as part of the main workflow.
+- Current Web source: `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
+- Deprecated copied Web target: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`
 
-- API image source: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>`
-- Web image source: `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
-- Historical sync option: [archive/ecr-cross-account-sync-setup.md](archive/ecr-cross-account-sync-setup.md)
+Keep this file as a fallback reference if direct partner ECR pulls become unavailable.
 
 ## 1) GitHub OIDC trust policy (our AWS role)
 
-Use this as the trust relationship for the GitHub Actions ECR pull role in account `485104726319`.
+Use this as the trust relationship for role `github-actions-ecr-push-role` in account `485104726319`.
 
 ```json
 {
@@ -39,9 +38,9 @@ Use this as the trust relationship for the GitHub Actions ECR pull role in accou
 
 Replace `<YOUR_GITHUB_ORG_OR_USER>/<YOUR_REPO>` with the real repository path.
 
-## 2) IAM permissions policy for pull role (our AWS role)
+## 2) IAM permissions policy for sync role (our AWS role)
 
-Attach this to the GitHub Actions role that pulls images during CI.
+Attach this to role `github-actions-ecr-push-role`.
 
 ```json
 {
@@ -64,6 +63,23 @@ Attach this to the GitHub Actions role that pulls images during CI.
         "ecr:BatchCheckLayerAvailability"
       ],
       "Resource": "arn:aws:ecr:us-east-1:692735150780:repository/taskflow/web"
+    },
+    {
+      "Sid": "PushToOurRepo",
+      "Effect": "Allow",
+      "Action": [
+        "ecr:BatchCheckLayerAvailability",
+        "ecr:BatchGetImage",
+        "ecr:CompleteLayerUpload",
+        "ecr:DescribeImages",
+        "ecr:DescribeRepositories",
+        "ecr:GetDownloadUrlForLayer",
+        "ecr:InitiateLayerUpload",
+        "ecr:ListImages",
+        "ecr:PutImage",
+        "ecr:UploadLayerPart"
+      ],
+      "Resource": "arn:aws:ecr:ca-central-1:485104726319:repository/taskflow/web"
     }
   ]
 }
@@ -108,11 +124,11 @@ If your EKS nodes/pods need to pull private ECR images, attach read permissions 
 
 AWS managed policy `AmazonEC2ContainerRegistryReadOnly` can be used for pull-only access.
 
-## 5) Expected test flow
+## 5) Historical test flow
 
-1. Confirm the partner repo policy allows your CI/runtime identity to pull `taskflow/web`.
-2. Login to the partner ECR and pull `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:v1.0.6`.
-3. Point Kubernetes Deployment or Helm values directly at the partner ECR URI.
+1. Run workflow `Sync partner web image to our ECR` with `partner_image_tag=v1.0.6`.
+2. Verify image exists in our ECR: `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:v1.0.6`.
+3. Update Kubernetes Deployment image to our ECR URI.
 
 PARTNER_REGION: us-east-1
 PARTNER_REGISTRY: 692735150780.dkr.ecr.us-east-1.amazonaws.com
@@ -120,10 +136,4 @@ PARTNER_REPOSITORY: taskflow/web
 
 MY_REGION: ca-central-1
 MY_REGISTRY: 485104726319.dkr.ecr.ca-central-1.amazonaws.com
-MY_REPOSITORY: taskflow/api
-
-## Deprecated option: sync partner web image to our ECR
-
-The previous design copied `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>` into `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`.
-
-That design is not the active path anymore, but the original IAM policy and test flow are preserved in [archive/ecr-cross-account-sync-setup.md](archive/ecr-cross-account-sync-setup.md) in case direct partner ECR pulls become unreliable or unavailable.
+MY_REPOSITORY: taskflow/web
