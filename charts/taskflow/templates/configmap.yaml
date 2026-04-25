@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: taskflow-config
+  labels:
+    app: taskflow
+data:
+  DB_HOST: {{ .Values.config.dbHost | quote }}
+  DB_PORT: {{ .Values.config.dbPort | quote }}
+  DB_NAME: {{ .Values.config.dbName | quote }}
+  DB_USER: {{ .Values.config.dbUser | quote }}

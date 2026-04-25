@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taskflow-api
+  labels:
+    app: taskflow-api
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.api.service.port }}
+      targetPort: {{ .Values.api.containerPort }}
+      protocol: TCP
+      name: http
+  selector:
+    app: taskflow-api
