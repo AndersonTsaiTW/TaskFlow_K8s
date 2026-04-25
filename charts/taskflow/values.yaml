@@ -1,0 +1,49 @@
+namespace: taskflow
+
+imagePullSecrets: []
+
+api:
+  replicaCount: 1
+  image:
+    # Replace with your own ECR (or DockerHub) URI
+    repository: <YOUR_ECR_URI>/taskflow/api
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 8000
+  service:
+    port: 8000
+
+web:
+  replicaCount: 1
+  image:
+    # Replace with your own ECR (or DockerHub) URI
+    repository: <YOUR_ECR_URI>/taskflow/web
+    tag: latest
+    pullPolicy: IfNotPresent
+  containerPort: 3000
+  service:
+    port: 3000
+
+postgres:
+  enabled: true
+  image: postgres:16-alpine
+  port: 5432
+  storage: 1Gi
+
+config:
+  dbHost: taskflow-postgres
+  dbPort: "5432"
+  dbName: taskflow
+  dbUser: postgres
+
+secret:
+  # Override these sensitive values in values-local.yaml for local dev or production!
+  dbPassword: "change-me-in-production"
+  jwtSecret: "change-me-in-production"
+
+ingress:
+  enabled: false
+  className: ""
+  host: taskflow.local
+  path: /
+  pathType: Prefix

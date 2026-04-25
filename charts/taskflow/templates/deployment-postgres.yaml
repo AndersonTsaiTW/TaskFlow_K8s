@@ -1,20 +1,8 @@
-apiVersion: v1
-kind: PersistentVolumeClaim
-metadata:
-  name: postgres-pvc
-  namespace: taskflow
-spec:
-  accessModes:
-    - ReadWriteOnce
-  resources:
-    requests:
-      storage: 1Gi
----
+{{- if .Values.postgres.enabled }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: taskflow-postgres
-  namespace: taskflow
 spec:
   strategy:
     type: Recreate
@@ -29,17 +17,20 @@ spec:
     spec:
       containers:
         - name: postgres
-          image: postgres:16-alpine
+          image: {{ .Values.postgres.image | default "postgres:16-alpine" }}
           imagePullPolicy: IfNotPresent
           env:
             - name: POSTGRES_DB
-              value: taskflow
+              value: {{ .Values.config.dbName | quote }}
             - name: POSTGRES_USER
-              value: postgres
+              value: {{ .Values.config.dbUser | quote }}
             - name: POSTGRES_PASSWORD
-              value: postgres
+              valueFrom:
+                secretKeyRef:
+                  name: taskflow-secret
+                  key: dbPassword
           ports:
-            - containerPort: 5432
+            - containerPort: {{ .Values.postgres.port | default 5432 }}
           volumeMounts:
             - name: postgres-data
               mountPath: /var/lib/postgresql/data
@@ -47,17 +38,4 @@ spec:
         - name: postgres-data
           persistentVolumeClaim:
             claimName: postgres-pvc
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: taskflow-postgres
-  namespace: taskflow
-spec:
-  selector:
-    app: taskflow-postgres
-  ports:
-    - name: postgres
-      port: 5432
-      targetPort: 5432
-  type: ClusterIP
+{{- end }}

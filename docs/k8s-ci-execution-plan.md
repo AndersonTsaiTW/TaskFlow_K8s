@@ -47,9 +47,9 @@ images:
 
 ## 1) 目標架構
 
-1. 來源 image 都在你的 ECR：
+1. 來源 image 分別來自兩個 ECR：
    - `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>`
-   - `485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`
+   - `692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
 2. PR workflow 做整合驗證：
    - 讀 `config/image-versions.yaml`
    - 從 ECR pull api/web
@@ -67,14 +67,15 @@ images:
    - `k8s/`（manifests）
    - `tests/smoke/`
    - `config/`（版本檔）
-2. 保留現有 image sync workflow：
-   - `.github/workflows/sync-partner-web-image.yml`
-3. 把 Deployment image 改成來自你 ECR。
+2. 不再做 partner web image sync/copy；Web 直接從朋友的 ECR 拉取。
+3. 把 Deployment image 改成來自實際來源 ECR。
 
    實作方式（我們剛剛討論版）：
 
    - API image：`485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>`
-   - Web image：`485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>`
+   - Web image：`692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>`
+
+   歷史備案：若未來需要恢復「先把朋友的 Web image sync 到你的 ECR」模式，舊方案保留在 `docs/archive/ecr-cross-account-sync-setup.md`。
 
    目前 repo 範例檔（已可直接用）：
 
@@ -144,11 +145,18 @@ images:
 
    Kind 本地測試建議做法（避免私有 ECR 認證問題）：
 
+   由於你的基礎設施現在是直接從你的 ECR 抓 API，從 Partner 的 ECR 抓 Web，所以在本地測試時，必須登入雙方的 ECR 拉取，再手動塞進 Kind 裡面：
+
    ```bash
+   # 1. 登入你自己的 ECR 並拉取 API Image
+   aws ecr get-login-password --region ca-central-1 | docker login --username AWS --password-stdin 485104726319.dkr.ecr.ca-central-1.amazonaws.com
    docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag>
-   docker pull 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag>
    kind load docker-image 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api:<tag> --name taskflow-ci
-   kind load docker-image 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/web:<tag> --name taskflow-ci
+
+   # 2. 登入 Partner 的 ECR 並拉取 Web Image
+   aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 692735150780.dkr.ecr.us-east-1.amazonaws.com
+   docker pull 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag>
+   kind load docker-image 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web:<tag> --name taskflow-ci
    ```
 
    若 API 出現 `CrashLoopBackOff` 且 log 顯示連到 `localhost:5432` 失敗：
@@ -185,12 +193,11 @@ images:
     參考流程：
 
     - 安裝 `yq`（YAML 讀值工具）
-    - 讀出 `aws.accountId`、`aws.region`
-    - 讀出 `images.api.repository`、`images.api.tag`
-    - 讀出 `images.web.repository`、`images.web.tag`
+    - 讀出 `images.api` 的帳號、區域、倉庫與標籤
+    - 讀出 `images.web` 的帳號、區域、倉庫與標籤
     - 組成：
-       - `API_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<api_repo>:<api_tag>`
-       - `WEB_IMAGE=<account>.dkr.ecr.<region>.amazonaws.com/<web_repo>:<web_tag>`
+       - `API_IMAGE`
+       - `WEB_IMAGE`
 
     GitHub Actions 範例 step：
 
@@ -205,18 +212,19 @@ images:
     - name: Build image URIs from config file
        id: images
        run: |
-          ACCOUNT_ID=$(yq -r '.aws.accountId' config/image-versions.yaml)
-          REGION=$(yq -r '.aws.region' config/image-versions.yaml)
+          API_ACCT=$(yq -r '.images.api.account' config/image-versions.yaml)
+          API_REG=$(yq -r '.images.api.region' config/image-versions.yaml)
           API_REPO=$(yq -r '.images.api.repository' config/image-versions.yaml)
           API_TAG=$(yq -r '.images.api.tag' config/image-versions.yaml)
+          
+          WEB_ACCT=$(yq -r '.images.web.account' config/image-versions.yaml)
+          WEB_REG=$(yq -r '.images.web.region' config/image-versions.yaml)
           WEB_REPO=$(yq -r '.images.web.repository' config/image-versions.yaml)
           WEB_TAG=$(yq -r '.images.web.tag' config/image-versions.yaml)
 
-          REGISTRY="${ACCOUNT_ID}.dkr.ecr.${REGION}.amazonaws.com"
-          API_IMAGE="${REGISTRY}/${API_REPO}:${API_TAG}"
-          WEB_IMAGE="${REGISTRY}/${WEB_REPO}:${WEB_TAG}"
+          API_IMAGE="${API_ACCT}.dkr.ecr.${API_REG}.amazonaws.com/${API_REPO}:${API_TAG}"
+          WEB_IMAGE="${WEB_ACCT}.dkr.ecr.${WEB_REG}.amazonaws.com/${WEB_REPO}:${WEB_TAG}"
 
-          echo "registry=${REGISTRY}" >> "$GITHUB_OUTPUT"
           echo "api_image=${API_IMAGE}" >> "$GITHUB_OUTPUT"
           echo "web_image=${WEB_IMAGE}" >> "$GITHUB_OUTPUT"
     ```
@@ -262,7 +270,7 @@ images:
 
 1. Checkout
 2. OIDC 取得 AWS 暫時憑證（唯讀 ECR 權限角色）
-3. Login 你的 ECR
+3. Login API ECR 與朋友的 Web ECR
 4. Pull `api` 與 `web` image
 5. 建立 Kind 叢集
 6. 將 image 載入 Kind
@@ -300,7 +308,8 @@ images:
 注意：
 
 - 這個 PR CI role 不需要 ECR push 權限。
-- 跟你現有 sync role 分開更安全。
+- 這個角色只需要 pull 權限，不需要把朋友的 image push/copy 到你的 ECR。
+- 舊的 sync/copy 方案只作為備案保留，主流程不使用。
 
 ## 4) CRUD 測試最小範圍
 

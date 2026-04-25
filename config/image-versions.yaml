@@ -1,12 +1,12 @@
 # Single source of truth for image tags used by manifests and CI.
-aws:
-  accountId: "485104726319"
-  region: "ca-central-1"
-
 images:
   api:
+    account: "485104726319"
+    region: "ca-central-1"
     repository: "taskflow/api"
     tag: "v1.0.1"
   web:
+    account: "692735150780"
+    region: "us-east-1"
     repository: "taskflow/web"
     tag: "v1.0.6"
