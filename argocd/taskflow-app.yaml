@@ -1,0 +1,23 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: taskflow
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AndersonTsaiTW/TaskFlow_K8s
+    targetRevision: master
+    path: charts/taskflow
+    helm:
+      valueFiles:
+        - values.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: taskflow
+  syncPolicy:
+    automated:
+      prune: true       # delete resources that are no longer in git
+      selfHeal: true    # sync resources back to git status
+    syncOptions:
+      - CreateNamespace=true

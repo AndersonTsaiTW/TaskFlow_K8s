@@ -5,9 +5,8 @@ imagePullSecrets: []
 api:
   replicaCount: 1
   image:
-    # Replace with your own ECR (or DockerHub) URI
-    repository: <YOUR_ECR_URI>/taskflow/api
-    tag: latest
+    repository: 485104726319.dkr.ecr.ca-central-1.amazonaws.com/taskflow/api
+    tag: v1.0.1
     pullPolicy: IfNotPresent
   containerPort: 8000
   service:
@@ -16,9 +15,8 @@ api:
 web:
   replicaCount: 1
   image:
-    # Replace with your own ECR (or DockerHub) URI
-    repository: <YOUR_ECR_URI>/taskflow/web
-    tag: latest
+    repository: 692735150780.dkr.ecr.us-east-1.amazonaws.com/taskflow/web
+    tag: v1.0.6
     pullPolicy: IfNotPresent
   containerPort: 3000
   service:
