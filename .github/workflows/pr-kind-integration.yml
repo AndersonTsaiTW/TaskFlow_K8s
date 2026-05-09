@@ -52,9 +52,11 @@ jobs:
           
           echo "api_acct=${API_ACCT}" >> "$GITHUB_OUTPUT"
           echo "api_reg=${API_REG}" >> "$GITHUB_OUTPUT"
+          echo "api_tag=${API_TAG}" >> "$GITHUB_OUTPUT"
           
           echo "web_acct=${WEB_ACCT}" >> "$GITHUB_OUTPUT"
           echo "web_reg=${WEB_REG}" >> "$GITHUB_OUTPUT"
+          echo "web_tag=${WEB_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Configure AWS Credentials for API (Your AWS Account)
         uses: aws-actions/configure-aws-credentials@v4
@@ -82,28 +84,27 @@ jobs:
           docker pull ${{ steps.parse_images.outputs.web_image }}
           kind load docker-image ${{ steps.parse_images.outputs.web_image }} --name taskflow-ci
 
-      - name: Render K8s Manifests
+      - name: Deploy with Helm
         run: |
-          mkdir -p .rendered/k8s
-          cp k8s/*.yaml .rendered/k8s/
-          # Replace placeholders with exact image URIs
-          sed -i "s|__API_IMAGE__|${{ steps.parse_images.outputs.api_image }}|g" .rendered/k8s/api-deployment.yaml
-          sed -i "s|__WEB_IMAGE__|${{ steps.parse_images.outputs.web_image }}|g" .rendered/k8s/web-deployment.yaml
-
-      - name: Apply Manifests
-        run: |
-          kubectl apply -f .rendered/k8s/namespace.yaml
-          kubectl apply -f .rendered/k8s/postgres.yaml
-          kubectl apply -f .rendered/k8s/api-deployment.yaml
-          kubectl apply -f .rendered/k8s/web-deployment.yaml
-
-      - name: Wait for Pods to be Ready
-        run: |
-          kubectl wait --for=condition=ready pod -l app=taskflow-postgres -n taskflow --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=taskflow-api -n taskflow --timeout=120s
+          helm upgrade --install taskflow ./charts/taskflow \
+            --namespace taskflow \
+            --create-namespace \
+            --set api.image.repository=${{ steps.parse_images.outputs.api_acct }}.dkr.ecr.${{ steps.parse_images.outputs.api_reg }}.amazonaws.com/taskflow/api \
+            --set api.image.tag=${{ steps.parse_images.outputs.api_tag }} \
+            --set web.image.repository=${{ steps.parse_images.outputs.web_acct }}.dkr.ecr.${{ steps.parse_images.outputs.web_reg }}.amazonaws.com/taskflow/web \
+            --set web.image.tag=${{ steps.parse_images.outputs.web_tag }} \
+            --wait \
+            --timeout 5m
 
       - name: Run Smoke Tests (Hurl)
         run: |
           kubectl -n taskflow port-forward svc/taskflow-api 8000:8000 &
           sleep 5
           bash scripts/run-ci-tests.sh
+
+      - name: Dump logs on failure
+        if: failure()
+        run: |
+          kubectl get all -n taskflow
+          kubectl describe pods -n taskflow
+          kubectl logs -l app=taskflow-api -n taskflow --tail=50
