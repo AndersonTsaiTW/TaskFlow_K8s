@@ -12,6 +12,15 @@
 
 ---
 
+## Phase 0：Helm basic
+- `helm install`	第一次部署，建立 Release
+- `helm upgrade`	更新 Release（改 values 或 chart）
+- `helm upgrade --install`	兩者合一，有就升、沒有就裝
+- `helm rollback`	回到指定的 Revision
+- `helm uninstall`	刪除 Release 及其所有 K8s 資源
+
+---
+
 ## Phase 1：先把 Helm chart 做出來
 
 Helm chart 最基本會有：
